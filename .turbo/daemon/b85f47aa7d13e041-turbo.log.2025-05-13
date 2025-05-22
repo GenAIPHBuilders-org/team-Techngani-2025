@@ -1,0 +1,16 @@
+2025-05-13T12:50:44.199529Z  WARN turborepo_filewatch: failed to wait for initial filesystem cookie: filewatching failed to start: failed to write cookie to C:\Users\Grantuza_PC\Desktop\GEN AI\.turbo\cookies\.turbo-cookie: failed to create file `C:\Users\Grantuza_PC\Desktop\GEN AI\.turbo\cookies\.turbo-cookie`
+2025-05-13T12:50:44.306688Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T12:50:44.408375Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T12:54:17.773037Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T13:04:02.529041Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T13:05:33.096983Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T13:07:21.903697Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T13:14:28.363908Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T13:14:28.435325Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T14:42:36.123603Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T14:46:28.519978Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T14:48:11.904209Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T15:00:50.355115Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T15:02:14.980850Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T15:04:06.313323Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running
+2025-05-13T15:38:02.864932Z  WARN daemon_server: turborepo_lib::commands::daemon: daemon already running

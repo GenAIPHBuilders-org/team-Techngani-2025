@@ -1,3 +1,5 @@
+# Sikatly.AI Server
+
 <p align="center">
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>
@@ -21,6 +23,22 @@
 </p>
   <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
   [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+
+## Recent Updates
+
+We've recently enhanced our authentication system to support user avatars and improved session management. This update enables the client-side to display user avatars in the navigation bar when users are authenticated.
+
+### Key Authentication Features
+
+- **JWT-based Authentication**: Secure authentication using JSON Web Tokens
+- **GraphQL APIs**: Clean, type-safe APIs for user management
+- **User Avatar Support**: Added avatar URLs to user profiles
+- **Enhanced Session Management**: Improved token handling and validation
+
+For detailed documentation on the authentication system, please see:
+
+- [Authentication Documentation](./docs/AUTHENTICATION.md)
+- [Server Update Log](./UPDATES.md)
 
 ## Description
 
