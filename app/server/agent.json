@@ -1,0 +1,23 @@
+{
+  "id": "43783392-8c95-47d7-a47c-07231946493b",
+  "name": "Gemini: Extract Trends",
+  "type": "@n8n/n8n-nodes-langchain.lmchatgooglegemini",
+  "position": [1540, 0],
+  "typeVersion": 1,
+  "parameters": {
+    "model": "models/chat-bison-001",
+    "options": {
+      "maxTokens": 1024,
+      "temperature": 0.7,
+      "topK": 1,
+      "topP": 0.9
+    },
+    "requestOptions": {}
+  },
+  "credentials": {
+    "googleGeminiPaLMApi": {
+      "id": "YOUR_GOOGLE_GEMINI_CRED_ID",
+      "name": "Google Gemini (PaLM) credentials"
+    }
+  }
+}

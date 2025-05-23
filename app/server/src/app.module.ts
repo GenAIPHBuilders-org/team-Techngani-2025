@@ -9,6 +9,7 @@ import { join } from 'path';
 import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
+import { TrendsModule } from './trends/trends.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { ConfigModule } from '@nestjs/config';
     PrismaModule,
     UserModule,
     AuthModule,
+    TrendsModule,
   ],
   controllers: [AppController],
   providers: [AppService, PrismaService],
