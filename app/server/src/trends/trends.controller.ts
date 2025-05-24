@@ -1,8 +1,9 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, Get, Query } from '@nestjs/common';
 import { TrendsService } from './trends.service';
 import { AnalyzeNicheDto } from './dto/analyze-niche.dto';
 import { GenerateReportDto } from './dto/generate-report.dto';
 import { TitleResponse, ReportResponse } from './types/trends.types';
+import { ContentOverview } from './types/content.types';
 
 @Controller('trends')
 export class TrendsController {
@@ -23,5 +24,12 @@ export class TrendsController {
       generateReportDto.niche,
       generateReportDto.selectedIndex,
     );
+  }
+
+  @Get('content')
+  async analyzeContent(
+    @Query('niche') niche: string,
+  ): Promise<ContentOverview> {
+    return this.trendsService.analyzeContent(niche);
   }
 }

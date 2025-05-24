@@ -4,6 +4,7 @@ import OpenAI from 'openai';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { TitleResponse, ReportResponse } from './types/trends.types';
+import { ContentOverview, ContentSuggestion } from './types/content.types';
 
 @Injectable()
 export class TrendsService {
@@ -26,6 +27,50 @@ export class TrendsService {
     });
 
     this.logger.log('AI agent initialized');
+  }
+
+  async analyzeContent(niche: string): Promise<ContentOverview> {
+    try {
+      this.logger.log(`Analyzing content for niche: ${niche}`);
+
+      const prompt = `
+        You are a fun and creative content strategist AI! I need your help to analyze the niche "${niche}" and provide engaging content suggestions.
+        
+        Please provide a response in the following JSON format:
+        {
+          "overview": "A fun, upbeat 2-3 sentence overview of the niche and its current state",
+          "suggestions": [
+            {
+              "title": "Creative suggestion title",
+              "description": "Fun description of the suggestion",
+              "funFactor": 8, // Rate how fun/entertaining this suggestion would be (1-10)
+              "implementation": "Step-by-step guide on how to implement this fun idea"
+            }
+            // Provide 3-5 suggestions
+          ],
+          "mood": "Overall mood/tone recommendation for content in this niche",
+          "engagementTips": [
+            "Fun tip 1 for increasing engagement",
+            "Fun tip 2 for increasing engagement",
+            "Fun tip 3 for increasing engagement"
+          ]
+        }
+
+        Make sure your suggestions are:
+        1. Entertaining and fun to watch/read
+        2. Easy to implement
+        3. Engaging for the audience
+        4. Include elements of humor where appropriate
+        
+        Return only the JSON object, no additional commentary.
+      `;
+
+      const aiResponse = await this.callAiService(prompt);
+      return this.parseContentOverview(aiResponse);
+    } catch (error) {
+      this.logger.error(`Error analyzing content: ${error.message}`);
+      throw error;
+    }
   }
 
   async analyzeTrends(niche: string): Promise<TitleResponse> {
@@ -86,39 +131,18 @@ export class TrendsService {
 
         ${detailedData}
 
-        Based on this data and your analysis, generate a detailed report formatted as JSON with the following structure:
+        Based on this data and your analysis, provide a concise but comprehensive overview of the current trends and opportunities.
+        Focus on:
+        1. Current market state and trends
+        2. Key opportunities and potential
+        3. What makes this topic relevant now
         
-        {
-          "overview": "A 2–3 sentence overview of why this topic is trending now, including specific data points and statistics",
-          "outline": [
-            {
-              "title": "Section Title",
-              "points": ["Data-backed bullet point 1", "Data-backed bullet point 2", "Data-backed bullet point 3"]
-            },
-            // 3-5 sections total, each with specific insights from the data
-          ],
-          "keywords": ["relevant keyword 1", "relevant keyword 2", "relevant keyword 3", "etc"],
-          "multimedia": [
-            {
-              "type": "Type (Image, Video, Chart, etc)",
-              "description": "Specific multimedia element with data source",
-              "placement": "Where to insert it in the content"
-            },
-            // 3-5 multimedia suggestions based on the data
-          ],
-          "checklist": [
-            "Specific action item 1 with data source",
-            "Specific action item 2 with data source",
-            "Specific action item 3 with data source",
-            "etc"
-          ]
-        }
-        
-        Ensure your response is valid JSON. Do not include any extra commentary—just the JSON object.
+        Return a single, well-structured paragraph (2-3 sentences) that captures the essence of the trend.
+        Do not include any additional sections or commentary - just the overview paragraph.
       `;
 
       const aiResponse = await this.callAiService(prompt);
-      return this.extractReportFromAiResponse(aiResponse);
+      return { overview: aiResponse.trim() };
     } catch (error) {
       this.logger.error(`Error generating report: ${error.message}`);
       throw error;
@@ -237,11 +261,11 @@ export class TrendsService {
           {
             role: 'system',
             content:
-              'You are an advanced trend analyzer AI with expertise in data analysis and market research.',
+              'You are a fun and creative content strategist AI with expertise in making content engaging and enjoyable.',
           },
           { role: 'user', content: prompt },
         ],
-        temperature: 0.7,
+        temperature: 0.8,
         top_p: 1.0,
         model: 'openai/gpt-4.1',
       });
@@ -316,41 +340,28 @@ export class TrendsService {
     }
   }
 
-  private extractReportFromAiResponse(response: string): ReportResponse {
+  private parseContentOverview(response: string): ContentOverview {
     try {
-      // Try to parse the response as JSON
       return JSON.parse(response);
     } catch (error) {
-      this.logger.error(`Error parsing report JSON: ${error.message}`);
-
-      // Return a fallback report if parsing fails
+      this.logger.error(`Error parsing content overview: ${error.message}`);
       return {
         overview:
-          'Failed to generate a proper report. The AI response could not be parsed correctly.',
-        outline: [
+          "Oops! Something went wrong, but don't worry - we're still having fun!",
+        suggestions: [
           {
-            title: 'Error Processing Request',
-            points: [
-              'The AI response was not in the expected format',
-              'This may be due to API limitations or parsing issues',
-              'Please try again with more specific parameters',
-            ],
+            title: "The Classic 'Try Again' Dance",
+            description: 'When in doubt, do a little dance and try again!',
+            funFactor: 10,
+            implementation:
+              '1. Do a happy dance\n2. Refresh the page\n3. Try your request again',
           },
         ],
-        keywords: ['error', 'processing', 'AI response', 'format issue'],
-        multimedia: [
-          {
-            type: 'None',
-            description:
-              'No multimedia suggestions available due to processing error',
-            placement: 'N/A',
-          },
-        ],
-        checklist: [
-          'Try the request again',
-          'Provide more specific niche information',
-          'Check system logs for detailed error messages',
-          'Contact technical support if the issue persists',
+        mood: 'Keep smiling!',
+        engagementTips: [
+          'Remember to keep your content light and fun!',
+          "Don't be afraid to show your personality",
+          "Engage with your audience like they're friends",
         ],
       };
     }

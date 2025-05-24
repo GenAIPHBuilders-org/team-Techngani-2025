@@ -1,0 +1,1412 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "e8ecde8c-611e-460c-a0ed-31f93f270623",
+      "name": "chat_message_received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "position": [-60, 1140],
+      "webhookId": "ff9622a4-a6ec-4396-b9de-c95bd834c23c",
+      "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "path": "youtube-search",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "7ca877ea-54bf-439b-b7cc-9d4cfb70cc88",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "position": [280, 1800],
+      "typeVersion": 2,
+      "webhookId": "cb664e5c-b88a-4232-9b07-f000d7e6dc96"
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "limit": 5,
+        "filters": {
+          "publishedAfter": "={{ new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString() }}",
+          "q": "={{ $json.query.search_term || $json.search_term }}",
+          "regionCode": "US"
+        },
+        "options": {
+          "order": "relevance",
+          "safeSearch": "moderate"
+        }
+      },
+      "id": "311180d1-5342-4bcd-b330-45647141d9d9",
+      "name": "YouTube Search",
+      "type": "n8n-nodes-base.youTube",
+      "position": [480, 1800],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "condition1",
+              "operator": {
+                "type": "array",
+                "operation": "notEmpty"
+              },
+              "leftValue": "={{ $json }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5f185e85-875d-4d72-a0ee-6ae17afab039",
+      "name": "Check Results",
+      "type": "n8n-nodes-base.if",
+      "position": [680, 1800],
+      "typeVersion": 2.2
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "4a956b7e-1050-4b9e-bd2f-4a37e78fca8c",
+      "name": "Process Videos",
+      "type": "n8n-nodes-base.splitInBatches",
+      "position": [880, 1720],
+      "typeVersion": 3
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/videos",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $env.GOOGLE_API_KEY }}"
+            },
+            {
+              "name": "id",
+              "value": "={{ $json.id.videoId }}"
+            },
+            {
+              "name": "part",
+              "value": "contentDetails,snippet,statistics"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "fc0466a0-ce69-4c4f-a952-636b9a8b9075",
+      "name": "Get Video Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1080, 1720],
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "duration_check",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "leftValue": "={{ \n  (() => {\n    try {\n      const items = $json.items;\n      if (!items || items.length === 0) return false;\n      \n      const duration = items[0]?.contentDetails?.duration;\n      if (!duration) return false;\n\n      const iso8601ToSeconds = iso8601 => {\n        const match = iso8601.match(/PT(?:(\\d+)H)?(?:(\\d+)M)?(?:(\\d+)S)?/);\n        if (!match) return 0;\n        const hours = parseInt(match[1] || 0, 10);\n        const minutes = parseInt(match[2] || 0, 10);\n        const seconds = parseInt(match[3] || 0, 10);\n        return hours * 3600 + minutes * 60 + seconds;\n      };\n\n      const durationInSeconds = iso8601ToSeconds(duration);\n      return durationInSeconds > 210; // 3.5 minutes\n    } catch (error) {\n      console.error('Duration check error:', error);\n      return false;\n    }\n  })()\n}}"
+            },
+            {
+              "id": "stats_check",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "leftValue": "={{ \n  (() => {\n    try {\n      const items = $json.items;\n      if (!items || items.length === 0) return false;\n      \n      const stats = items[0]?.statistics;\n      if (!stats) return false;\n      \n      const viewCount = parseInt(stats.viewCount || 0);\n      return viewCount > 100; // Minimum views threshold\n    } catch (error) {\n      console.error('Stats check error:', error);\n      return false;\n    }\n  })()\n}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4dd9b194-c0c2-4daa-9da3-74d527b6ef83",
+      "name": "Quality Filter",
+      "type": "n8n-nodes-base.if",
+      "position": [1280, 1720],
+      "typeVersion": 2.2
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "video_id",
+              "name": "id",
+              "type": "string",
+              "value": "={{ $json.items?.[0]?.id || 'unknown' }}"
+            },
+            {
+              "id": "view_count",
+              "name": "viewCount",
+              "type": "number",
+              "value": "={{ parseInt($json.items?.[0]?.statistics?.viewCount || 0) }}"
+            },
+            {
+              "id": "like_count",
+              "name": "likeCount",
+              "type": "number",
+              "value": "={{ parseInt($json.items?.[0]?.statistics?.likeCount || 0) }}"
+            },
+            {
+              "id": "comment_count",
+              "name": "commentCount",
+              "type": "number",
+              "value": "={{ parseInt($json.items?.[0]?.statistics?.commentCount || 0) }}"
+            },
+            {
+              "id": "description",
+              "name": "description",
+              "type": "string",
+              "value": "={{ \n  (() => {\n    const desc = $json.items?.[0]?.snippet?.description || '';\n    return desc\n      .replace(/https?:\\/\\/\\S+/g, '')\n      .replace(/www\\.\\S+/g, '')\n      .replace(/\\s+/g, ' ')\n      .trim()\n      .substring(0, 500);\n  })()\n}}"
+            },
+            {
+              "id": "title",
+              "name": "title",
+              "type": "string",
+              "value": "={{ $json.items?.[0]?.snippet?.title || 'No title' }}"
+            },
+            {
+              "id": "channel_title",
+              "name": "channelTitle",
+              "type": "string",
+              "value": "={{ $json.items?.[0]?.snippet?.channelTitle || 'Unknown channel' }}"
+            },
+            {
+              "id": "tags",
+              "name": "tags",
+              "type": "string",
+              "value": "={{ \n  (() => {\n    const tags = $json.items?.[0]?.snippet?.tags;\n    if (!tags || !Array.isArray(tags)) return '';\n    return tags.slice(0, 10).join(', ');\n  })()\n}}"
+            },
+            {
+              "id": "channel_id",
+              "name": "channelId",
+              "type": "string",
+              "value": "={{ $json.items?.[0]?.snippet?.channelId || 'unknown' }}"
+            },
+            {
+              "id": "published_at",
+              "name": "publishedAt",
+              "type": "string",
+              "value": "={{ $json.items?.[0]?.snippet?.publishedAt || '' }}"
+            },
+            {
+              "id": "engagement_rate",
+              "name": "engagementRate",
+              "type": "number",
+              "value": "={{ \n  (() => {\n    const stats = $json.items?.[0]?.statistics;\n    if (!stats) return 0;\n    \n    const views = parseInt(stats.viewCount || 0);\n    const likes = parseInt(stats.likeCount || 0);\n    const comments = parseInt(stats.commentCount || 0);\n    \n    if (views === 0) return 0;\n    return Math.round(((likes + comments) / views) * 100 * 100) / 100;\n  })()\n}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fa7eea98-74ed-4a5a-9834-567c9d7c10b0",
+      "name": "Format Video Data",
+      "type": "n8n-nodes-base.set",
+      "position": [1480, 1660],
+      "typeVersion": 3.4
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Initialize or get existing data from workflow static data\nconst workflowStaticData = $getWorkflowStaticData('global');\n\nif (!workflowStaticData.videoResults) {\n    workflowStaticData.videoResults = {\n        videos: [],\n        searchTerm: '',\n        timestamp: new Date().toISOString()\n    };\n}\n\n// Get current video data\nconst currentVideo = $input.item;\n\n// Set search term if not already set\nif (!workflowStaticData.videoResults.searchTerm && $node[\"YouTube Search\"].parameter.filters?.q) {\n    workflowStaticData.videoResults.searchTerm = $node[\"YouTube Search\"].parameter.filters.q;\n}\n\n// Add current video to results\nworkflowStaticData.videoResults.videos.push(currentVideo);\n\n// Continue batch processing\nreturn currentVideo;"
+      },
+      "id": "b509926a-cda2-4b78-ab2c-0843f80f9214",
+      "name": "Accumulate Results",
+      "type": "n8n-nodes-base.code",
+      "position": [1680, 1660],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get accumulated results from workflow static data\nconst workflowStaticData = $getWorkflowStaticData('global');\nconst results = workflowStaticData.videoResults || { videos: [], searchTerm: '', timestamp: new Date().toISOString() };\n\n// Format final response\nlet responseText = '';\n\nif (results.videos.length === 0) {\n    responseText = 'No qualifying videos found for the search term.';\n} else {\n    responseText = results.videos.map(video => {\n        return JSON.stringify({\n            id: video.id,\n            title: video.title,\n            channelTitle: video.channelTitle,\n            channelId: video.channelId,\n            viewCount: video.viewCount,\n            likeCount: video.likeCount,\n            commentCount: video.commentCount,\n            engagementRate: video.engagementRate,\n            description: video.description,\n            tags: video.tags,\n            publishedAt: video.publishedAt\n        });\n    }).join(' ### NEXT VIDEO FOUND: ### ');\n}\n\n// Clear static data for next search\nworkflowStaticData.videoResults = { videos: [], searchTerm: '', timestamp: '' };\n\nreturn [{ \n    response: responseText,\n    videoCount: results.videos.length,\n    searchTerm: results.searchTerm\n}];"
+      },
+      "id": "5e6bffc1-bf92-43cc-870d-1ef85aba87d4",
+      "name": "Finalize Response",
+      "type": "n8n-nodes-base.code",
+      "position": [1480, 1900],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "error_response",
+              "name": "response",
+              "type": "string",
+              "value": "No videos found matching the search criteria. This could be due to: 1) Very specific search terms, 2) Limited recent content in this niche, or 3) API rate limits. Try broader search terms."
+            },
+            {
+              "id": "video_count",
+              "name": "videoCount",
+              "type": "number",
+              "value": 0
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d3c29ad1-a145-4f13-8a02-33592b85a229",
+      "name": "No Results Response",
+      "type": "n8n-nodes-base.set",
+      "position": [880, 1900],
+      "typeVersion": 3.4
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { response: $json.response, videoCount: $json.videoCount, searchTerm: $json.searchTerm || 'unknown' } }}",
+        "options": {}
+      },
+      "id": "5354985e-bd1b-4100-9ac0-8955fd11fd50",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [1680, 1900],
+      "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "content": "YouTube Search Sub-Workflow\\n\\nThis workflow:\\n1. Searches YouTube for videos from last 2 days\\n2. Gets detailed video information\\n3. Filters by duration (>3.5min) and quality\\n4. Formats and returns structured data\\n\\nInput: { search_term: string }\\nOutput: Formatted video data with metrics",
+        "height": 520,
+        "width": 1740,
+        "color": 5
+      },
+      "id": "12bc2fc0-74ae-4e7f-ba46-967aefd83d86",
+      "name": "Workflow Description",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [180, 1600],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "url": "https://graph.facebook.com/v18.0/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $env.FACEBOOK_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "q",
+              "value": "={{ $json.query.search_term || $json.search_term }}"
+            },
+            {
+              "name": "type",
+              "value": "post"
+            },
+            {
+              "name": "limit",
+              "value": "10"
+            },
+            {
+              "name": "fields",
+              "value": "id,message,created_time,likes.summary(true),comments.summary(true),shares"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "ce2183af-ebbb-457e-98c6-7640c1d0b47f",
+      "name": "Facebook Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [500, 2460],
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "has_data",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "leftValue": "={{ \n  (() => {\n    try {\n      const data = $json.data;\n      return data && Array.isArray(data) && data.length > 0;\n    } catch (error) {\n      return false;\n    }\n  })()\n}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f41573a4-5151-4362-8b3e-6985427894d8",
+      "name": "Check Facebook Results",
+      "type": "n8n-nodes-base.if",
+      "position": [700, 2460],
+      "typeVersion": 2.2
+    },
+    {
+      "parameters": {},
+      "id": "8aaab0c6-cf77-4ff6-9d8a-7df07877f583",
+      "name": "Split Facebook Posts",
+      "type": "n8n-nodes-base.itemLists",
+      "position": [920, 2320],
+      "typeVersion": 3.3
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "has_engagement",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "leftValue": "={{ \n  (() => {\n    try {\n      const likes = $json.likes?.summary?.total_count || 0;\n      const comments = $json.comments?.summary?.total_count || 0;\n      const shares = $json.shares?.count || 0;\n      \n      return (likes + comments + shares) > 10; // Minimum engagement threshold\n    } catch (error) {\n      return false;\n    }\n  })()\n}}"
+            },
+            {
+              "id": "has_content",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              },
+              "leftValue": "={{ $json.message || '' }}"
+            },
+            {
+              "id": "recent_post",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "leftValue": "={{ \n  (() => {\n    try {\n      const createdTime = new Date($json.created_time);\n      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);\n      return createdTime >= twoDaysAgo;\n    } catch (error) {\n      return false;\n    }\n  })()\n}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "34d8455c-45bc-4488-9891-f13005d5b9bf",
+      "name": "Filter Quality Posts",
+      "type": "n8n-nodes-base.if",
+      "position": [1100, 2380],
+      "typeVersion": 2.2
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "post_id",
+              "name": "id",
+              "type": "string",
+              "value": "={{ $json.id || 'unknown' }}"
+            },
+            {
+              "id": "message",
+              "name": "message",
+              "type": "string",
+              "value": "={{ \n  (() => {\n    const message = $json.message || '';\n    return message\n      .replace(/https?:\\/\\/\\S+/g, '')\n      .replace(/#\\w+/g, '')\n      .replace(/\\s+/g, ' ')\n      .trim()\n      .substring(0, 300);\n  })()\n}}"
+            },
+            {
+              "id": "likes_count",
+              "name": "likesCount",
+              "type": "number",
+              "value": "={{ $json.likes?.summary?.total_count || 0 }}"
+            },
+            {
+              "id": "comments_count",
+              "name": "commentsCount",
+              "type": "number",
+              "value": "={{ $json.comments?.summary?.total_count || 0 }}"
+            },
+            {
+              "id": "shares_count",
+              "name": "sharesCount",
+              "type": "number",
+              "value": "={{ $json.shares?.count || 0 }}"
+            },
+            {
+              "id": "created_time",
+              "name": "createdTime",
+              "type": "string",
+              "value": "={{ $json.created_time || '' }}"
+            },
+            {
+              "id": "total_engagement",
+              "name": "totalEngagement",
+              "type": "number",
+              "value": "={{ \n  (() => {\n    const likes = $json.likes?.summary?.total_count || 0;\n    const comments = $json.comments?.summary?.total_count || 0;\n    const shares = $json.shares?.count || 0;\n    return likes + comments + shares;\n  })()\n}}"
+            },
+            {
+              "id": "hashtags",
+              "name": "hashtags",
+              "type": "string",
+              "value": "={{ \n  (() => {\n    const message = $json.message || '';\n    const hashtagMatches = message.match(/#\\w+/g);\n    return hashtagMatches ? hashtagMatches.slice(0, 5).join(', ') : '';\n  })()\n}}"
+            },
+            {
+              "id": "post_type",
+              "name": "postType",
+              "type": "string",
+              "value": "facebook_post"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ca97e5ca-f29f-4cd8-90d4-8c84559c7267",
+      "name": "Format Facebook Data",
+      "type": "n8n-nodes-base.set",
+      "position": [1300, 2320],
+      "typeVersion": 3.4
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Initialize or get existing data from workflow static data\nconst workflowStaticData = $getWorkflowStaticData('global');\n\nif (!workflowStaticData.facebookResults) {\n    workflowStaticData.facebookResults = {\n        posts: [],\n        searchTerm: '',\n        timestamp: new Date().toISOString()\n    };\n}\n\n// Get current post data\nconst currentPost = $input.item;\n\n// Add current post to results\nworkflowStaticData.facebookResults.posts.push(currentPost);\n\nreturn currentPost;"
+      },
+      "id": "5193c604-bdea-4896-b84a-560abfa8b986",
+      "name": "Accumulate Facebook Results",
+      "type": "n8n-nodes-base.code",
+      "position": [1500, 2320],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get accumulated results from workflow static data\nconst workflowStaticData = $getWorkflowStaticData('global');\nconst results = workflowStaticData.facebookResults || { posts: [], searchTerm: '', timestamp: new Date().toISOString() };\n\n// Sort by engagement (highest first)\nresults.posts.sort((a, b) => b.totalEngagement - a.totalEngagement);\n\n// Take top 5 posts\nconst topPosts = results.posts.slice(0, 5);\n\n// Format final response\nlet responseText = '';\n\nif (topPosts.length === 0) {\n    responseText = 'No qualifying Facebook posts found for the search term. This could be due to API limitations or very specific search criteria.';\n} else {\n    responseText = topPosts.map(post => {\n        return JSON.stringify({\n            id: post.id,\n            message: post.message,\n            likesCount: post.likesCount,\n            commentsCount: post.commentsCount,\n            sharesCount: post.sharesCount,\n            totalEngagement: post.totalEngagement,\n            hashtags: post.hashtags,\n            createdTime: post.createdTime,\n            postType: post.postType,\n            platform: 'Facebook'\n        });\n    }).join(' ### NEXT FACEBOOK POST: ### ');\n}\n\n// Clear static data for next search\nworkflowStaticData.facebookResults = { posts: [], searchTerm: '', timestamp: '' };\n\nreturn [{ \n    response: responseText,\n    postCount: topPosts.length,\n    searchTerm: results.searchTerm,\n    platform: 'Facebook'\n}];"
+      },
+      "id": "955352e6-4ec5-4d74-af68-fe01de4bddf9",
+      "name": "Finalize Facebook Response",
+      "type": "n8n-nodes-base.code",
+      "position": [1300, 2560],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "no_results",
+              "name": "response",
+              "type": "string",
+              "value": "No Facebook posts found matching the search criteria. This could be due to: 1) API access limitations, 2) Very specific search terms, 3) Limited public posts in this niche, or 4) Recent changes in Facebook's API policies."
+            },
+            {
+              "id": "post_count",
+              "name": "postCount",
+              "type": "number",
+              "value": 0
+            },
+            {
+              "id": "platform",
+              "name": "platform",
+              "type": "string",
+              "value": "Facebook"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5265d9f2-0f98-46b5-a66e-8a28fd0508c5",
+      "name": "No Facebook Results",
+      "type": "n8n-nodes-base.set",
+      "position": [900, 2560],
+      "typeVersion": 3.4
+    },
+    {
+      "parameters": {
+        "content": "📘 FACEBOOK TRENDS WORKFLOW\n\nThis workflow:\n1. Searches Facebook Graph API for public posts\n2. Filters by engagement and recency (last 2 days)\n3. Extracts hashtags and engagement metrics\n4. Returns top 5 trending posts\n\n⚠️ Note: Requires Facebook Graph API access token\nwith public_posts permission\n\nInput: { search_term: string }\nOutput: Formatted Facebook post data",
+        "height": 600,
+        "width": 1540,
+        "color": 4
+      },
+      "id": "121cd1e4-08af-468a-a514-00c86227a66c",
+      "name": "Facebook Workflow Description",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [180, 2160],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "path": "facebook-trends",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "0f3c5ec6-758d-463d-9946-fc7c5fdbeec1",
+      "name": "Webhook Trigger1",
+      "type": "n8n-nodes-base.webhook",
+      "position": [300, 2460],
+      "typeVersion": 2,
+      "webhookId": "6c090686-e4e1-476e-9a72-9ff595c31033"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { response: $json.response, postCount: $json.postCount, searchTerm: $json.searchTerm || 'unknown', platform: $json.platform } }}",
+        "options": {}
+      },
+      "id": "12b887a8-a411-4da3-9151-92e4dff87e72",
+      "name": "Webhook Response1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [1500, 2560],
+      "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are a comprehensive social media trend analyst that helps content creators identify trending topics across YouTube, Facebook, and TikTok based on their specified niche.\n\n## Step 1: Niche Identification\nIf the user hasn't specified a niche, ask them to choose from these popular options:\n- Tech & Gadgets\n- Gaming & Esports\n- Fitness & Health\n- Cooking & Food\n- Personal Finance\n- Beauty & Fashion\n- Travel & Lifestyle\n- Education & Tutorials\n- Entertainment & Comedy\n- Business & Entrepreneurship\n\n## Step 2: Multi-Platform Analysis\nOnce you have the niche, use ALL THREE tools to gather comprehensive trend data:\n1. **youtube_search** - Find trending YouTube videos\n2. **facebook_trends** - Analyze Facebook trending posts\n3. **tiktok_trends** - Discover TikTok viral content\n\nUse varied search terms for each platform (3-4 different queries per platform) to get comprehensive coverage.\n\n## Step 3: Trend Analysis & Content Suggestions\nAnalyze the combined data to identify:\n- Common themes across all platforms\n- Platform-specific trending formats\n- Engagement patterns and metrics\n- Emerging topics gaining momentum\n\n## Step 4: Content Creation Recommendations\nBased on the trends identified, provide:\n\n### 📝 **TRENDING TOPIC TITLES** (5-7 suggestions)\n- Catchy, engaging titles optimized for each platform\n- Include power words and trending keywords\n- Format: Platform-specific title variations\n\n### 📋 **CONTENT OVERVIEW & STRATEGY**\n- **Main Theme**: What's trending and why\n- **Key Points to Cover**: 4-6 bullet points\n- **Content Angle**: Unique perspective or approach\n- **Call-to-Action**: Engagement strategy\n- **Platform Optimization**: Specific tips for each platform\n\n### 📊 **TREND METRICS**\n- Cross-platform engagement averages\n- Best performing content formats\n- Optimal posting recommendations\n\n### 🔗 **REFERENCE LINKS**\nProvide links to top-performing content:\n- YouTube: https://www.youtube.com/watch?v={video_id}\n- Facebook: https://www.facebook.com/{post_id}\n- TikTok: https://www.tiktok.com/@{username}/video/{video_id}\n\n## Example Response Format:\n\n**🔥 TRENDING IN [NICHE]: [Main Trend Theme]**\n\n**📝 CONTENT TITLES:**\n1. \"[Engaging Title 1] - YouTube Optimized\"\n2. \"[Engaging Title 2] - Facebook Version\"\n3. \"[Engaging Title 3] - TikTok Hook\"\n\n**📋 CONTENT STRATEGY:**\n- **Theme**: [What's trending]\n- **Key Points**: [Bullet points]\n- **Angle**: [Unique approach]\n- **CTA**: [Engagement strategy]\n\n**📊 PERFORMANCE DATA:**\n- Average engagement rates across platforms\n- Best performing formats\n\nFocus on providing actionable, data-driven content recommendations that creators can immediately implement."
+        }
+      },
+      "id": "e0869370-7bd9-49b5-a2bd-c659ea629566",
+      "name": "AI_Trend_Analyst",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "position": [540, 1140],
+      "typeVersion": 1.6
+    },
+    {
+      "parameters": {},
+      "id": "2665021b-9026-4dec-95ed-3cb1e93dac05",
+      "name": "conversation_memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "position": [600, 1320],
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "content": "🚀 MULTI-PLATFORM TREND ANALYZER\n\nThis AI agent analyzes trends across YouTube, Facebook, and TikTok to provide:\n✅ Trending content titles\n✅ Content strategy recommendations\n✅ Cross-platform insights\n✅ Engagement optimization tips\n\nSimply chat with a niche and get comprehensive trend analysis!",
+        "height": 640,
+        "width": 1180,
+        "color": 7
+      },
+      "id": "cde809de-6ab4-4e57-bc4d-5a222aa1ac42",
+      "name": "Main_Workflow_Description",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [180, 920],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "name": "youtube_search",
+        "description": "Search for trending YouTube videos in the specified niche from the last 2 days. Returns video data with metrics, engagement rates, and trending indicators.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "youtube_search_workflow",
+          "cachedResultName": "YouTube Search Workflow"
+        },
+        "specifyInputSchema": true,
+        "jsonSchemaExample": "{\n\t\"search_term\": \"string - search query related to the niche (e.g., 'AI tools 2024', 'fitness motivation', 'cooking hacks')\"\n}"
+      },
+      "id": "afc118d8-f7ff-40ee-a959-47cd8005fe88",
+      "name": "youtube_search2",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "position": [800, 1320],
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "name": "facebook_trends",
+        "description": "Analyze trending Facebook posts and topics in the specified niche. Returns post data with engagement metrics, trending hashtags, and viral content indicators.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "facebook_trends_workflow",
+          "cachedResultName": "Facebook Trends Workflow"
+        },
+        "specifyInputSchema": true,
+        "jsonSchemaExample": "{\n\t\"search_term\": \"string - search query for Facebook trends (e.g., 'sustainable living', 'digital marketing tips', 'healthy recipes')\"\n}"
+      },
+      "id": "657fa070-e873-43df-ac5b-27dac49b1575",
+      "name": "facebook_trends1",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "position": [940, 1320],
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "name": "tiktok_trends",
+        "description": "Discover trending TikTok videos, sounds, and hashtags in the specified niche. Returns viral content data with view counts, trending audio, and popular formats.",
+        "workflowId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "tiktok_trends_workflow",
+          "cachedResultName": "TikTok Trends Workflow"
+        },
+        "specifyInputSchema": true,
+        "jsonSchemaExample": "{\n\t\"search_term\": \"string - search query for TikTok trends (e.g., 'productivity hacks', 'fashion trends 2024', 'quick workouts')\"\n}"
+      },
+      "id": "8c17e097-a3b7-46dc-8f60-7a84b3405e99",
+      "name": "tiktok_trends1",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "position": [1100, 1320],
+      "typeVersion": 1.2
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "options": {
+          "maxTokens": 3000,
+          "temperature": 0.4,
+          "topP": 0.9
+        }
+      },
+      "id": "6bac902e-9935-4784-960e-1bc17f727e02",
+      "name": "openai_llm2",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "position": [420, 1320],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "path": "tiktok-trends",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "368a8720-8962-4f9d-befa-d251a01ec33b",
+      "name": "TikTok Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "position": [260, 3380],
+      "typeVersion": 2,
+      "webhookId": "tiktok-trends-webhook-id"
+    },
+    {
+      "parameters": {
+        "url": "https://api.tikapi.io/public/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.query.search_term || $json.search_term }}"
+            },
+            {
+              "name": "count",
+              "value": "20"
+            },
+            {
+              "name": "cursor",
+              "value": "0"
+            },
+            {
+              "name": "search_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-KEY",
+              "value": "={{ $env.TIKAPI_KEY }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "219a79c2-75db-4c67-b950-05eecb3833ac",
+      "name": "TikTok Search API",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [460, 3380],
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "has_videos",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "leftValue": "={{ \n  (() => {\n    try {\n      const data = $json.data;\n      return data && Array.isArray(data) && data.length > 0;\n    } catch (error) {\n      return false;\n    }\n  })()\n}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d2c65d6f-ed71-43d1-b6a9-39128d4fba4b",
+      "name": "Check TikTok Results",
+      "type": "n8n-nodes-base.if",
+      "position": [660, 3380],
+      "typeVersion": 2.2
+    },
+    {
+      "parameters": {},
+      "id": "caf5de74-3344-458d-9953-8e942cc9a182",
+      "name": "Split TikTok Videos",
+      "type": "n8n-nodes-base.itemLists",
+      "position": [860, 3300],
+      "typeVersion": 3.3
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "high_engagement",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "leftValue": "={{ \n  (() => {\n    try {\n      const stats = $json.stats;\n      if (!stats) return false;\n      \n      const views = parseInt(stats.playCount || 0);\n      const likes = parseInt(stats.diggCount || 0);\n      const shares = parseInt(stats.shareCount || 0);\n      const comments = parseInt(stats.commentCount || 0);\n      \n      // High engagement threshold\n      return views > 10000 && (likes + shares + comments) > 50;\n    } catch (error) {\n      return false;\n    }\n  })()\n}}"
+            },
+            {
+              "id": "recent_video",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "leftValue": "={{ \n  (() => {\n    try {\n      const createTime = parseInt($json.createTime) * 1000;\n      const twoDaysAgo = Date.now() - (2 * 24 * 60 * 60 * 1000);\n      return createTime >= twoDaysAgo;\n    } catch (error) {\n      return false;\n    }\n  })()\n}}"
+            },
+            {
+              "id": "has_description",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              },
+              "leftValue": "={{ $json.desc || '' }}"
+            },
+            {
+              "id": "good_duration",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              },
+              "leftValue": "={{ \n  (() => {\n    try {\n      const duration = parseInt($json.video?.duration || 0);\n      return duration >= 5 && duration <= 180; // 5 seconds to 3 minutes\n    } catch (error) {\n      return true; // If we can't check duration, allow it\n    }\n  })()\n}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "869e71ec-f211-4f1e-9747-19b4faf9db30",
+      "name": "Filter Quality TikToks",
+      "type": "n8n-nodes-base.if",
+      "position": [1060, 3300],
+      "typeVersion": 2.2
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "video_id",
+              "name": "id",
+              "type": "string",
+              "value": "={{ $json.id || 'unknown' }}"
+            },
+            {
+              "id": "video_desc",
+              "name": "description",
+              "type": "string",
+              "value": "={{ \n  (() => {\n    const desc = $json.desc || '';\n    return desc\n      .replace(/https?:\\/\\/\\S+/g, '')\n      .replace(/\\s+/g, ' ')\n      .trim()\n      .substring(0, 300);\n  })()\n}}"
+            },
+            {
+              "id": "author_name",
+              "name": "authorName",
+              "type": "string",
+              "value": "={{ $json.author?.nickname || $json.author?.uniqueId || 'Unknown' }}"
+            },
+            {
+              "id": "author_username",
+              "name": "authorUsername",
+              "type": "string",
+              "value": "={{ $json.author?.uniqueId || 'unknown' }}"
+            },
+            {
+              "id": "play_count",
+              "name": "playCount",
+              "type": "number",
+              "value": "={{ parseInt($json.stats?.playCount || 0) }}"
+            },
+            {
+              "id": "like_count",
+              "name": "likeCount",
+              "type": "number",
+              "value": "={{ parseInt($json.stats?.diggCount || 0) }}"
+            },
+            {
+              "id": "comment_count",
+              "name": "commentCount",
+              "type": "number",
+              "value": "={{ parseInt($json.stats?.commentCount || 0) }}"
+            },
+            {
+              "id": "share_count",
+              "name": "shareCount",
+              "type": "number",
+              "value": "={{ parseInt($json.stats?.shareCount || 0) }}"
+            },
+            {
+              "id": "hashtags",
+              "name": "hashtags",
+              "type": "string",
+              "value": "={{ \n  (() => {\n    const desc = $json.desc || '';\n    const hashtagMatches = desc.match(/#[\\w\\u4e00-\\u9fff]+/g);\n    return hashtagMatches ? hashtagMatches.slice(0, 8).join(', ') : '';\n  })()\n}}"
+            },
+            {
+              "id": "music_title",
+              "name": "musicTitle",
+              "type": "string",
+              "value": "={{ $json.music?.title || 'No music' }}"
+            },
+            {
+              "id": "music_author",
+              "name": "musicAuthor",
+              "type": "string",
+              "value": "={{ $json.music?.authorName || '' }}"
+            },
+            {
+              "id": "video_duration",
+              "name": "duration",
+              "type": "number",
+              "value": "={{ parseInt($json.video?.duration || 0) }}"
+            },
+            {
+              "id": "create_time",
+              "name": "createTime",
+              "type": "string",
+              "value": "={{ new Date(parseInt($json.createTime) * 1000).toISOString() }}"
+            },
+            {
+              "id": "total_engagement",
+              "name": "totalEngagement",
+              "type": "number",
+              "value": "={{ \n  (() => {\n    const likes = parseInt($json.stats?.diggCount || 0);\n    const comments = parseInt($json.stats?.commentCount || 0);\n    const shares = parseInt($json.stats?.shareCount || 0);\n    return likes + comments + shares;\n  })()\n}}"
+            },
+            {
+              "id": "engagement_rate",
+              "name": "engagementRate",
+              "type": "number",
+              "value": "={{ \n  (() => {\n    const views = parseInt($json.stats?.playCount || 0);\n    const likes = parseInt($json.stats?.diggCount || 0);\n    const comments = parseInt($json.stats?.commentCount || 0);\n    const shares = parseInt($json.stats?.shareCount || 0);\n    \n    if (views === 0) return 0;\n    return Math.round(((likes + comments + shares) / views) * 100 * 100) / 100;\n  })()\n}}"
+            },
+            {
+              "id": "video_url",
+              "name": "videoUrl",
+              "type": "string",
+              "value": "={{ 'https://www.tiktok.com/@' + ($json.author?.uniqueId || 'user') + '/video/' + ($json.id || '') }}"
+            },
+            {
+              "id": "covers",
+              "name": "covers",
+              "type": "string",
+              "value": "={{ JSON.stringify($json.video?.cover || []) }}"
+            },
+            {
+              "id": "platform",
+              "name": "platform",
+              "type": "string",
+              "value": "TikTok"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9d3c199c-64cb-44fd-8828-bc4dc5db00d3",
+      "name": "Format TikTok Data",
+      "type": "n8n-nodes-base.set",
+      "position": [1260, 3240],
+      "typeVersion": 3.4
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Initialize or get existing data from workflow static data\nconst workflowStaticData = $getWorkflowStaticData('global');\n\nif (!workflowStaticData.tiktokResults) {\n    workflowStaticData.tiktokResults = {\n        videos: [],\n        searchTerm: '',\n        timestamp: new Date().toISOString(),\n        trendingHashtags: new Set(),\n        trendingMusic: new Set()\n    };\n}\n\n// Get current video data\nconst currentVideo = $input.item;\n\n// Extract and track trending hashtags\nif (currentVideo.hashtags) {\n    const hashtags = currentVideo.hashtags.split(', ').filter(tag => tag.trim());\n    hashtags.forEach(tag => workflowStaticData.tiktokResults.trendingHashtags.add(tag));\n}\n\n// Track trending music\nif (currentVideo.musicTitle && currentVideo.musicTitle !== 'No music') {\n    workflowStaticData.tiktokResults.trendingMusic.add(currentVideo.musicTitle);\n}\n\n// Add current video to results\nworkflowStaticData.tiktokResults.videos.push(currentVideo);\n\nreturn currentVideo;"
+      },
+      "id": "80ab6d30-bbb4-49f1-aa22-ad262cf5c755",
+      "name": "Accumulate TikTok Results",
+      "type": "n8n-nodes-base.code",
+      "position": [1460, 3240],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get accumulated results from workflow static data\nconst workflowStaticData = $getWorkflowStaticData('global');\nconst results = workflowStaticData.tiktokResults || { \n    videos: [], \n    searchTerm: '', \n    timestamp: new Date().toISOString(),\n    trendingHashtags: new Set(),\n    trendingMusic: new Set()\n};\n\n// Sort by engagement rate and total engagement (combined score)\nresults.videos.sort((a, b) => {\n    const scoreA = (a.engagementRate * 0.6) + (Math.log10(a.totalEngagement + 1) * 0.4);\n    const scoreB = (b.engagementRate * 0.6) + (Math.log10(b.totalEngagement + 1) * 0.4);\n    return scoreB - scoreA;\n});\n\n// Take top 8 videos\nconst topVideos = results.videos.slice(0, 8);\n\n// Convert Sets to Arrays for JSON serialization\nconst trendingHashtags = Array.from(results.trendingHashtags).slice(0, 15);\nconst trendingMusic = Array.from(results.trendingMusic).slice(0, 10);\n\n// Calculate trend insights\nconst insights = {\n    avgEngagementRate: topVideos.length > 0 ? \n        Math.round((topVideos.reduce((sum, v) => sum + v.engagementRate, 0) / topVideos.length) * 100) / 100 : 0,\n    totalViews: topVideos.reduce((sum, v) => sum + v.playCount, 0),\n    avgDuration: topVideos.length > 0 ? \n        Math.round(topVideos.reduce((sum, v) => sum + v.duration, 0) / topVideos.length) : 0,\n    topHashtags: trendingHashtags,\n    trendingMusic: trendingMusic\n};\n\n// Format final response\nlet responseText = '';\n\nif (topVideos.length === 0) {\n    responseText = 'No qualifying TikTok videos found for the search term. This could be due to: 1) Very specific search terms, 2) API rate limits, 3) Limited recent viral content in this niche, or 4) Geographic restrictions.';\n} else {\n    // Add trend insights at the beginning\n    responseText = `TIKTOK_TREND_INSIGHTS: ${JSON.stringify(insights)} ### `;\n    \n    // Add individual videos\n    responseText += topVideos.map(video => {\n        return JSON.stringify({\n            id: video.id,\n            description: video.description,\n            authorName: video.authorName,\n            authorUsername: video.authorUsername,\n            playCount: video.playCount,\n            likeCount: video.likeCount,\n            commentCount: video.commentCount,\n            shareCount: video.shareCount,\n            totalEngagement: video.totalEngagement,\n            engagementRate: video.engagementRate,\n            hashtags: video.hashtags,\n            musicTitle: video.musicTitle,\n            musicAuthor: video.musicAuthor,\n            duration: video.duration,\n            createTime: video.createTime,\n            videoUrl: video.videoUrl,\n            platform: video.platform\n        });\n    }).join(' ### NEXT TIKTOK VIDEO: ### ');\n}\n\n// Clear static data for next search\nworkflowStaticData.tiktokResults = { \n    videos: [], \n    searchTerm: '', \n    timestamp: '',\n    trendingHashtags: new Set(),\n    trendingMusic: new Set()\n};\n\nreturn [{ \n    response: responseText,\n    videoCount: topVideos.length,\n    searchTerm: results.searchTerm,\n    platform: 'TikTok',\n    insights: insights\n}];"
+      },
+      "id": "a66ac6f7-1746-4d2d-b021-7356bb3da579",
+      "name": "Finalize TikTok Response",
+      "type": "n8n-nodes-base.code",
+      "position": [1260, 3480],
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "no_results_msg",
+              "name": "response",
+              "type": "string",
+              "value": "No TikTok videos found matching the search criteria. This could be due to: 1) API access limitations, 2) Very specific search terms, 3) Limited viral content in this niche, 4) Geographic restrictions, or 5) Recent changes in TikTok's API policies. Try broader search terms or check if the API key is valid."
+            },
+            {
+              "id": "video_count_zero",
+              "name": "videoCount",
+              "type": "number",
+              "value": 0
+            },
+            {
+              "id": "platform_name",
+              "name": "platform",
+              "type": "string",
+              "value": "TikTok"
+            },
+            {
+              "id": "empty_insights",
+              "name": "insights",
+              "type": "object",
+              "value": "={{ { avgEngagementRate: 0, totalViews: 0, avgDuration: 0, topHashtags: [], trendingMusic: [] } }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8ae434ca-a722-45d2-9c7b-fd73287c53e7",
+      "name": "No TikTok Results",
+      "type": "n8n-nodes-base.set",
+      "position": [860, 3480],
+      "typeVersion": 3.4
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \n    response: $json.response, \n    videoCount: $json.videoCount, \n    searchTerm: $json.searchTerm || 'unknown', \n    platform: $json.platform,\n    insights: $json.insights || {}\n} }}",
+        "options": {}
+      },
+      "id": "db646e8e-5341-404e-8785-4cb37cd2f586",
+      "name": "TikTok Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "position": [1460, 3480],
+      "typeVersion": 1.1
+    },
+    {
+      "parameters": {
+        "content": "🎵 TIKTOK TRENDS ANALYZER WORKFLOW\n\nThis workflow provides comprehensive TikTok trend analysis:\n\n✅ **FEATURES:**\n• Searches recent viral TikTok videos (last 2 days)\n• Filters by high engagement (10K+ views, 50+ interactions)\n• Extracts trending hashtags and music\n• Calculates engagement rates and metrics\n• Returns top 8 performing videos\n\n📊 **DATA EXTRACTED:**\n• Video metrics (views, likes, comments, shares)\n• Trending hashtags and music tracks\n• Creator information and video URLs\n• Engagement rates and duration analysis\n• Platform-specific trend insights\n\n🔧 **REQUIREMENTS:**\n• TIKAPI_KEY environment variable\n• TikAPI.io API access (recommended service)\n\n📝 **INPUT:** { search_term: string }\n📤 **OUTPUT:** Formatted TikTok trend data with insights\n\n⚠️ **NOTE:** Uses TikAPI.io service for reliable TikTok data access\nAlternative APIs: RapidAPI TikTok scrapers, Official TikTok Research API",
+        "height": 900,
+        "width": 1580,
+        "color": 6
+      },
+      "id": "6c80c4ab-03e3-4f5f-acbc-9ed5c33e2c5e",
+      "name": "TikTok Workflow Description",
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [180, 2800],
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "chat_message_received": {
+      "main": [
+        [
+          {
+            "node": "AI_Trend_Analyst",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "YouTube Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube Search": {
+      "main": [
+        [
+          {
+            "node": "Check Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Results": {
+      "main": [
+        [
+          {
+            "node": "Process Videos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Results Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Videos": {
+      "main": [
+        [
+          {
+            "node": "Finalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Video Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Video Details": {
+      "main": [
+        [
+          {
+            "node": "Quality Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quality Filter": {
+      "main": [
+        [
+          {
+            "node": "Format Video Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Videos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Video Data": {
+      "main": [
+        [
+          {
+            "node": "Accumulate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accumulate Results": {
+      "main": [
+        [
+          {
+            "node": "Process Videos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Response": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Results Response": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Facebook Search": {
+      "main": [
+        [
+          {
+            "node": "Check Facebook Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Facebook Results": {
+      "main": [
+        [],
+        [
+          {
+            "node": "No Facebook Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Quality Posts": {
+      "main": [
+        [
+          {
+            "node": "Format Facebook Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Facebook Data": {
+      "main": [
+        [
+          {
+            "node": "Accumulate Facebook Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accumulate Facebook Results": {
+      "main": [
+        [
+          {
+            "node": "Finalize Facebook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize Facebook Response": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Facebook Results": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger1": {
+      "main": [
+        [
+          {
+            "node": "Facebook Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "conversation_memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI_Trend_Analyst",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "youtube_search2": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI_Trend_Analyst",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "facebook_trends1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI_Trend_Analyst",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "tiktok_trends1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI_Trend_Analyst",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "openai_llm2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI_Trend_Analyst",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TikTok Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "TikTok Search API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TikTok Search API": {
+      "main": [
+        [
+          {
+            "node": "Check TikTok Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check TikTok Results": {
+      "main": [
+        [],
+        [
+          {
+            "node": "No TikTok Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Quality TikToks": {
+      "main": [
+        [
+          {
+            "node": "Format TikTok Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Finalize TikTok Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format TikTok Data": {
+      "main": [
+        [
+          {
+            "node": "Accumulate TikTok Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accumulate TikTok Results": {
+      "main": [
+        [
+          {
+            "node": "Finalize TikTok Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Finalize TikTok Response": {
+      "main": [
+        [
+          {
+            "node": "TikTok Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No TikTok Results": {
+      "main": [
+        [
+          {
+            "node": "TikTok Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0d5b05e8b1daaa68c2ad2a5eb51385a2cef9bbb55222112b82b5afb66595a560"
+  }
+}
