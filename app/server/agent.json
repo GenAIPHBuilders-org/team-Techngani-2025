@@ -1,0 +1,660 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "video-upload",
+        "responseMode": "responseNode",
+        "options": {
+          "binaryData": true,
+          "rawBody": true
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Video Upload Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "video-upload-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse incoming webhook data and extract video metadata\nconst body = JSON.parse($json.body);\nconst headers = $json.headers;\n\n// Extract user information and video metadata\nconst userData = {\n  userId: body.userId || headers['x-user-id'],\n  apiKey: headers['x-api-key'],\n  videoFile: body.videoFile,\n  metadata: {\n    title: body.title,\n    description: body.description,\n    tags: body.tags || [],\n    scheduledDateTime: body.scheduledDateTime,\n    platforms: body.platforms || [], // ['youtube', 'facebook', 'tiktok', 'instagram']\n    visibility: body.visibility || 'public',\n    category: body.category,\n    customThumbnail: body.customThumbnail\n  },\n  settings: {\n    generateAICaption: body.generateAICaption || false,\n    generateHashtags: body.generateHashtags || false,\n    autoOptimize: body.autoOptimize || true\n  }\n};\n\n// Validate required fields\nif (!userData.userId || !userData.videoFile || !userData.metadata.title) {\n  throw new Error('Missing required fields: userId, videoFile, or title');\n}\n\n// Validate scheduled time is in the future\nconst scheduledTime = new Date(userData.metadata.scheduledDateTime);\nconst now = new Date();\n\nif (scheduledTime <= now) {\n  throw new Error('Scheduled time must be in the future');\n}\n\nreturn userData;"
+      },
+      "id": "parse-webhook-data",
+      "name": "Parse Webhook Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "={{ $env.USER_SERVICE_URL }}/api/users/{{ $json.userId }}/verify",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer {{ $env.INTERNAL_API_KEY }}"
+          }
+        }
+      },
+      "id": "verify-user",
+      "name": "Verify User & Permissions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "generate-ai-content",
+              "leftValue": "={{ $json.settings.generateAICaption }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "check-ai-generation",
+      "name": "Check AI Generation Required",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "chatInput": {
+          "messages": {
+            "values": [
+              {
+                "role": "system",
+                "content": "You are a social media content expert. Generate engaging captions, descriptions, and hashtags optimized for different platforms."
+              },
+              {
+                "role": "user",
+                "content": "=Generate optimized content for a video titled: \"{{ $('Parse Webhook Data').item.json.metadata.title }}\"\n\nOriginal description: \"{{ $('Parse Webhook Data').item.json.metadata.description }}\"\n\nPlatforms: {{ $('Parse Webhook Data').item.json.metadata.platforms.join(', ') }}\n\nPlease provide:\n1. An engaging caption for each platform\n2. Relevant hashtags (max 30 for Instagram, 3-5 for others)\n3. Optimized descriptions\n\nReturn as JSON with platform-specific content."
+              }
+            ]
+          }
+        },
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 1000
+        }
+      },
+      "id": "generate-ai-content",
+      "name": "Generate AI Content",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1120, 200],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credentials",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge AI-generated content with original metadata\nconst originalData = $('Parse Webhook Data').item.json;\nconst aiContent = $json.message?.content;\n\nlet enhancedMetadata = { ...originalData };\n\nif (aiContent) {\n  try {\n    const aiData = JSON.parse(aiContent);\n    enhancedMetadata.aiGenerated = aiData;\n    \n    // Enhance platform-specific content\n    enhancedMetadata.metadata.platforms.forEach(platform => {\n      if (aiData[platform]) {\n        enhancedMetadata.metadata[`${platform}_caption`] = aiData[platform].caption;\n        enhancedMetadata.metadata[`${platform}_hashtags`] = aiData[platform].hashtags;\n        enhancedMetadata.metadata[`${platform}_description`] = aiData[platform].description;\n      }\n    });\n  } catch (error) {\n    console.log('AI content parsing failed, using original content');\n  }\n}\n\nreturn enhancedMetadata;"
+      },
+      "id": "merge-ai-content",
+      "name": "Merge AI Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "dateTime": "={{ $json.metadata.scheduledDateTime }}",
+        "options": {}
+      },
+      "id": "wait-until-scheduled",
+      "name": "Wait Until Scheduled Time",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.metadata.platforms }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "youtube",
+              "output": 1
+            },
+            {
+              "value2": "facebook",
+              "output": 2
+            },
+            {
+              "value2": "tiktok",
+              "output": 3
+            },
+            {
+              "value2": "instagram",
+              "output": 4
+            }
+          ]
+        }
+      },
+      "id": "platform-switch",
+      "name": "Platform Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "upload",
+        "title": "={{ $json.metadata.youtube_caption || $json.metadata.title }}",
+        "description": "={{ $json.metadata.youtube_description || $json.metadata.description }}",
+        "tags": {
+          "tags": "={{ $json.metadata.youtube_hashtags || $json.metadata.tags }}"
+        },
+        "categoryId": "22",
+        "privacyStatus": "={{ $json.metadata.visibility }}",
+        "options": {
+          "publishAt": "={{ $json.metadata.scheduledDateTime }}"
+        }
+      },
+      "id": "youtube-upload",
+      "name": "YouTube Upload",
+      "type": "n8n-nodes-base.youTube",
+      "typeVersion": 2,
+      "position": [2000, 100],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "youtube-oauth",
+          "name": "YouTube OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "video",
+        "operation": "create",
+        "pageId": "={{ $env.FACEBOOK_PAGE_ID }}",
+        "title": "={{ $json.metadata.facebook_caption || $json.metadata.title }}",
+        "description": "={{ $json.metadata.facebook_description || $json.metadata.description }}",
+        "options": {
+          "published": false,
+          "scheduledPublishTime": "={{ Math.floor(new Date($json.metadata.scheduledDateTime).getTime() / 1000) }}"
+        }
+      },
+      "id": "facebook-upload",
+      "name": "Facebook Upload",
+      "type": "n8n-nodes-base.facebook",
+      "typeVersion": 2,
+      "position": [2000, 220],
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "facebook-graph",
+          "name": "Facebook Graph API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.TIKTOK_UPLOAD_WEBHOOK }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"video_url\": \"{{ $json.videoFile }}\",\n  \"caption\": \"{{ $json.metadata.tiktok_caption || $json.metadata.title }}\",\n  \"hashtags\": {{ JSON.stringify($json.metadata.tiktok_hashtags || $json.metadata.tags) }},\n  \"scheduled_time\": \"{{ $json.metadata.scheduledDateTime }}\",\n  \"user_id\": \"{{ $json.userId }}\"\n}",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer {{ $env.TIKTOK_API_KEY }}",
+            "Content-Type": "application/json"
+          }
+        }
+      },
+      "id": "tiktok-upload",
+      "name": "TikTok Upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2000, 340]
+    },
+    {
+      "parameters": {
+        "url": "https://graph.facebook.com/v18.0/{{ $env.INSTAGRAM_ACCOUNT_ID }}/media",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"video_url\": \"{{ $json.videoFile }}\",\n  \"caption\": \"{{ $json.metadata.instagram_caption || $json.metadata.title }}\\n{{ ($json.metadata.instagram_hashtags || $json.metadata.tags).join(' ') }}\",\n  \"media_type\": \"REELS\",\n  \"published\": false\n}",
+        "options": {
+          "headers": {
+            "Authorization": "Bearer {{ $env.INSTAGRAM_ACCESS_TOKEN }}",
+            "Content-Type": "application/json"
+          }
+        }
+      },
+      "id": "instagram-upload",
+      "name": "Instagram Upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2000, 460]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect upload results from all platforms\nconst results = [];\nconst userData = $('Parse Webhook Data').item.json;\n\n// Process each platform result\nconst platformResults = {\n  youtube: null,\n  facebook: null,\n  tiktok: null,\n  instagram: null\n};\n\n// Check YouTube result\nif ($('YouTube Upload').item) {\n  const youtubeResult = $('YouTube Upload').item.json;\n  platformResults.youtube = {\n    success: true,\n    videoId: youtubeResult.id,\n    url: `https://youtube.com/watch?v=${youtubeResult.id}`,\n    platform: 'YouTube'\n  };\n}\n\n// Check Facebook result\nif ($('Facebook Upload').item) {\n  const facebookResult = $('Facebook Upload').item.json;\n  platformResults.facebook = {\n    success: true,\n    videoId: facebookResult.id,\n    url: `https://facebook.com/${facebookResult.id}`,\n    platform: 'Facebook'\n  };\n}\n\n// Check TikTok result\nif ($('TikTok Upload').item) {\n  const tiktokResult = $('TikTok Upload').item.json;\n  platformResults.tiktok = {\n    success: tiktokResult.status === 'success',\n    videoId: tiktokResult.video_id,\n    url: tiktokResult.share_url,\n    platform: 'TikTok'\n  };\n}\n\n// Check Instagram result\nif ($('Instagram Upload').item) {\n  const instagramResult = $('Instagram Upload').item.json;\n  platformResults.instagram = {\n    success: true,\n    videoId: instagramResult.id,\n    url: `https://instagram.com/p/${instagramResult.id}`,\n    platform: 'Instagram'\n  };\n}\n\n// Create summary\nconst summary = {\n  userId: userData.userId,\n  videoTitle: userData.metadata.title,\n  scheduledTime: userData.metadata.scheduledDateTime,\n  publishedTime: new Date().toISOString(),\n  platforms: platformResults,\n  totalPlatforms: userData.metadata.platforms.length,\n  successfulUploads: Object.values(platformResults).filter(r => r?.success).length,\n  failedUploads: Object.values(platformResults).filter(r => r && !r.success).length\n};\n\nreturn summary;"
+      },
+      "id": "collect-results",
+      "name": "Collect Upload Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "video_uploads",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "user_id": "={{ $json.userId }}",
+            "video_title": "={{ $json.videoTitle }}",
+            "scheduled_time": "={{ $json.scheduledTime }}",
+            "published_time": "={{ $json.publishedTime }}",
+            "platforms": "={{ JSON.stringify($json.platforms) }}",
+            "total_platforms": "={{ $json.totalPlatforms }}",
+            "successful_uploads": "={{ $json.successfulUploads }}",
+            "failed_uploads": "={{ $json.failedUploads }}",
+            "status": "={{ $json.failedUploads > 0 ? 'partial_success' : 'success' }}"
+          }
+        }
+      },
+      "id": "log-to-database",
+      "name": "Log to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2440, 300],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-db",
+          "name": "PostgreSQL Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.userId }}",
+        "text": "=🎉 Video Publishing Complete!\n\n📹 **{{ $json.videoTitle }}**\n\n✅ Successfully uploaded to {{ $json.successfulUploads }}/{{ $json.totalPlatforms }} platforms\n\n📊 **Results:**\n{{ Object.entries($json.platforms).map(([platform, result]) => result ? `${result.success ? '✅' : '❌'} ${result.platform}: ${result.success ? result.url : 'Failed'}` : '').filter(Boolean).join('\\n') }}\n\n🕐 Published at: {{ $json.publishedTime }}",
+        "options": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-notification",
+      "name": "Send Success Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [2660, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Video scheduled successfully\",\n  \"data\": {\n    \"userId\": \"{{ $('Parse Webhook Data').item.json.userId }}\",\n    \"videoTitle\": \"{{ $('Parse Webhook Data').item.json.metadata.title }}\",\n    \"scheduledTime\": \"{{ $('Parse Webhook Data').item.json.metadata.scheduledDateTime }}\",\n    \"platforms\": {{ JSON.stringify($('Parse Webhook Data').item.json.metadata.platforms) }},\n    \"workflowId\": \"{{ $workflow.id }}\"\n  }\n}"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2880, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Error handling and logging\nconst error = $json.error || 'Unknown error occurred';\nconst originalData = $('Parse Webhook Data').item?.json || {};\n\nconst errorLog = {\n  userId: originalData.userId,\n  videoTitle: originalData.metadata?.title,\n  errorMessage: error.message || error,\n  errorStack: error.stack,\n  timestamp: new Date().toISOString(),\n  workflowStep: $json.node || 'unknown',\n  inputData: JSON.stringify(originalData)\n};\n\nreturn errorLog;"
+      },
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 500]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "error_logs",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "user_id": "={{ $json.userId }}",
+            "video_title": "={{ $json.videoTitle }}",
+            "error_message": "={{ $json.errorMessage }}",
+            "error_stack": "={{ $json.errorStack }}",
+            "timestamp": "={{ $json.timestamp }}",
+            "workflow_step": "={{ $json.workflowStep }}",
+            "input_data": "={{ $json.inputData }}"
+          }
+        }
+      },
+      "id": "log-error",
+      "name": "Log Error to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [720, 500],
+      "credentials": {
+        "postgres": {
+          "id": "postgres-db",
+          "name": "PostgreSQL Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.userId }}",
+        "text": "=❌ **Video Publishing Failed**\n\n📹 Video: {{ $json.videoTitle || 'Unknown' }}\n🕐 Time: {{ $json.timestamp }}\n\n⚠️ **Error:** {{ $json.errorMessage }}\n\n🔧 Our team has been notified and will investigate this issue. Please try again later or contact support.",
+        "options": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-error-notification",
+      "name": "Send Error Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [940, 500],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": \"{{ $json.errorMessage }}\",\n  \"timestamp\": \"{{ $json.timestamp }}\",\n  \"supportId\": \"{{ $json.timestamp.replace(/[^0-9]/g, '').slice(-8) }}\"\n}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1160, 500]
+    }
+  ],
+  "connections": {
+    "Video Upload Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Webhook Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Webhook Data": {
+      "main": [
+        [
+          {
+            "node": "Verify User & Permissions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify User & Permissions": {
+      "main": [
+        [
+          {
+            "node": "Check AI Generation Required",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check AI Generation Required": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait Until Scheduled Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Content": {
+      "main": [
+        [
+          {
+            "node": "Merge AI Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge AI Content": {
+      "main": [
+        [
+          {
+            "node": "Wait Until Scheduled Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Until Scheduled Time": {
+      "main": [
+        [
+          {
+            "node": "Platform Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Platform Switch": {
+      "main": [
+        [
+          {
+            "node": "YouTube Upload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Facebook Upload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TikTok Upload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Instagram Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube Upload": {
+      "main": [
+        [
+          {
+            "node": "Collect Upload Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Facebook Upload": {
+      "main": [
+        [
+          {
+            "node": "Collect Upload Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TikTok Upload": {
+      "main": [
+        [
+          {
+            "node": "Collect Upload Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Instagram Upload": {
+      "main": [
+        [
+          {
+            "node": "Collect Upload Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Upload Results": {
+      "main": [
+        [
+          {
+            "node": "Log to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Database": {
+      "main": [
+        [
+          {
+            "node": "Send Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Success Notification": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Handler": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error to Database": {
+      "main": [
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Error Notification": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": {
+      "errorWorkflow": "error-handler"
+    }
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "video-automation",
+      "name": "Video Automation"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "social-media",
+      "name": "Social Media"
+    },
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "saas",
+      "name": "SaaS"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1.0.0"
+}
